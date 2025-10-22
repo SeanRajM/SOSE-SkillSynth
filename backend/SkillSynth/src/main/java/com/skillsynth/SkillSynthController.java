@@ -5,15 +5,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
 
 @CrossOrigin(origins = "http://localhost:5173/")
 @RestController
 @RequestMapping("/api")
-
 public class SkillSynthController {
 
     @Autowired
     private SkillSynthService skillSynthService;
+
+    @Autowired
+    private MLService mlService;
 
     // -------------------- USER ENDPOINTS --------------------
 
@@ -60,7 +65,12 @@ public class SkillSynthController {
 
     @PostMapping("/users")
     public AppUser createUser(@RequestBody AppUser user) {
-        return skillSynthService.createUser(user.getUsername(), user.getLevel(), user.getAllSkills());
+        // Correct argument order and method names
+        return skillSynthService.createUser(
+                user.getUsername(),
+                user.getLevel(),
+                user.getAllSkills()
+        );
     }
 
     @PutMapping("/users")
@@ -117,7 +127,7 @@ public class SkillSynthController {
 
     @PostMapping("/skills")
     public Skill createSkill(@RequestBody Skill skill) {
-        return skillSynthService.createSkill(skill.getSkillName(), skill.getDescription());
+        return skillSynthService.createSkill(skill.getName(), skill.getCategory());
     }
 
     @PutMapping("/skills")
@@ -179,6 +189,72 @@ public class SkillSynthController {
         );
     }
 
+    @PostMapping("/projects/ai-generate")
+    public ResponseEntity<Project> generateAIProject(@RequestBody Map<String, Object> request) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> skillMaps = (List<Map<String, Object>>) request.get("skills");
+            List<Skill> skills = new ArrayList<>();
+
+            for (Map<String, Object> skillMap : skillMaps) {
+                String skillName = (String) skillMap.get("skillName");
+                String category = (String) skillMap.getOrDefault("category", "General");
+                Skill skill = skillSynthService.getSkillByName(skillName)
+                        .orElseGet(() -> skillSynthService.createSkill(skillName, category));
+                skills.add(skill);
+            }
+
+            int timeAvailability = (Integer) request.get("time_availability");
+            int experienceLevel = (Integer) request.get("experience_level");
+
+            Project aiProject = skillSynthService.createAIProject(
+                    "AI Suggested Project",
+                    skills,
+                    timeAvailability,
+                    experienceLevel
+            );
+
+            return ResponseEntity.ok(aiProject);
+
+        } catch (Exception e) {
+            System.err.println("⚠️ Failed to generate AI project: " + e.getMessage());
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    @PostMapping("/projects/ai-generate-and-save")
+    public ResponseEntity<Project> generateAndSaveAIProject(@RequestBody Map<String, Object> request) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> skillMaps = (List<Map<String, Object>>) request.get("skills");
+            List<Skill> skills = new ArrayList<>();
+
+            for (Map<String, Object> skillMap : skillMaps) {
+                String skillName = (String) skillMap.get("skillName");
+                String category = (String) skillMap.getOrDefault("category", "General");
+                Skill skill = skillSynthService.getSkillByName(skillName)
+                        .orElseGet(() -> skillSynthService.createSkill(skillName, category));
+                skills.add(skill);
+            }
+
+            int timeAvailability = (Integer) request.get("time_availability");
+            int experienceLevel = (Integer) request.get("experience_level");
+
+            Project aiProject = skillSynthService.createAIProject(
+                    "AI Suggested Project",
+                    skills,
+                    timeAvailability,
+                    experienceLevel
+            );
+
+            return ResponseEntity.ok(aiProject);
+
+        } catch (Exception e) {
+            System.err.println("⚠️ Failed to generate and save AI project: " + e.getMessage());
+            return ResponseEntity.status(500).build();
+        }
+    }
+
     @PutMapping("/projects")
     public Project updateProject(@RequestBody Project project) {
         return skillSynthService.updateProject(project);
@@ -189,5 +265,41 @@ public class SkillSynthController {
         return skillSynthService.deleteProject(id)
                 ? ResponseEntity.noContent().build()
                 : ResponseEntity.notFound().build();
+    }
+
+    // -------------------- ML SERVICE ENDPOINTS --------------------
+
+    @PostMapping("/ml/relevant-skills")
+    public Map<String, Object> getRelevantSkills(@RequestParam String mainSkill, @RequestParam(defaultValue = "3") int topK) {
+        return mlService.getRelevantSkills(mainSkill, topK);
+    }
+
+    @PostMapping("/ml/generate-project")
+    public Map<String, Object> generateProject(@RequestBody Map<String, Object> request) {
+        @SuppressWarnings("unchecked")
+        List<String> mainSkills = (List<String>) request.get("main_skills");
+        int timeAvailability = (Integer) request.get("time_availability");
+        int experienceLevel = (Integer) request.get("experience_level");
+
+        return mlService.generateProject(mainSkills, timeAvailability, experienceLevel);
+    }
+
+    @PostMapping("/ml/process-skills")
+    public Map<String, Object> processAndUploadSkills(@RequestBody Map<String, List<String>> skills) {
+        return mlService.processAndUploadSkills(skills);
+    }
+
+    @PostMapping("/ml/upload-users")
+    public Map<String, Object> uploadUsers(@RequestBody List<Map<String, Object>> users) {
+        return mlService.uploadUsers(users);
+    }
+
+    @PostMapping("/ml/find-teammates")
+    public Map<String, Object> findTeammates(@RequestBody Map<String, Object> request) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> user = (Map<String, Object>) request.get("user");
+        int topK = (Integer) request.getOrDefault("top_k", 15);
+
+        return mlService.findTeammates(user, topK);
     }
 }
